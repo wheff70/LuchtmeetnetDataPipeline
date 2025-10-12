@@ -1,6 +1,6 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.hooks.postgres_hook import PostgresHook
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 from datetime import datetime, timedelta
 import pandas as pd
 import requests
@@ -64,14 +64,12 @@ with DAG(
 
     fetch_api = PythonOperator(
         task_id="fetch_api",
-        python_callable=fetch_api_data,
-        provide_context=True
+        python_callable=fetch_api_data
     )
 
     load_postgres = PythonOperator(
         task_id="load_postgres",
-        python_callable=load_to_postgres,
-        provide_context=True
+        python_callable=load_to_postgres
     )
 
     fetch_api >> load_postgres   
