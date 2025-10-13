@@ -50,7 +50,7 @@ def load_to_postgres(**kwargs):
     comp_df = pd.read_json(json_data)
     print("LOADING {len(comp_df)} ROWS TO DATABASE...")
 
-    comp_df.to_sql('component measurements', engine, if_exists='append', index=False)
+    comp_df.to_sql('component_measurements', engine, if_exists='append', index=False)
     print("Data successfully inserted into Luchtmeetnet database.")
 
 
