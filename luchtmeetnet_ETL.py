@@ -6,6 +6,15 @@ import pandas as pd
 import requests
 import pytz
 
+default_args = {
+    'owner': 'william_heffernan',
+    'retries': 3,
+    'retry_delay': timedelta(minutes=5),
+    'retry_exponential_backoff': True,
+    'max_retry_delay': timedelta(minutes=30),
+    'execution_timeout': timedelta(minutes=10)
+}
+
 def fetch_api_data(**kwargs):
     # Define timezone, declare time variables for API pull parameters
     tz = pytz.timezone('UTC')
@@ -60,6 +69,7 @@ def load_to_postgres(**kwargs):
 with DAG(
     dag_id="luchtmeetnet_api_etl",
     description="ETL pipeline for fetching and loading air quality data from the Luchtmeetnet API",
+    default_args=default_args,
     start_date=datetime(2025, 1, 1),
     schedule="@hourly",
     catchup=False,
