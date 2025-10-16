@@ -8,11 +8,12 @@ import pytz
 
 default_args = {
     'owner': 'william_heffernan',
-    'retries': 3,
+    'retries': 2,
     'retry_delay': timedelta(minutes=5),
     'retry_exponential_backoff': True,
-    'max_retry_delay': timedelta(minutes=30),
-    'execution_timeout': timedelta(minutes=10)
+    'max_retry_delay': timedelta(minutes=15),
+    'execution_timeout': timedelta(minutes=10),
+    'depends_on_past': True
 }
 
 def fetch_api_data(**kwargs):
@@ -47,20 +48,52 @@ def fetch_api_data(**kwargs):
     kwargs['ti'].xcom_push(key='comp_data', value=comp_df.to_json(orient='records'))
     print("Data pushed to XCom.")
 
+def validate_data(**kwargs):
+    json_data = kwargs['ti'].xcom_pull(task='fetch_api', key='comp_data')
+    if not json_data:
+        print("No data found in XCom for validation. Skipping.")
+        return None
+
+    df = pd.read_json(json_data)
+
+    # Validation rules
+    print("Starting data validation...")
+
+    required_columns = ['station_number', 'value', 'timestamp_measured', 'formula']
+    missing_columns = [c for c in required_columns if c not in df.columns]
+    if missing_columns:
+        raise ValueError(f"Missing required columns: {missing_columns}")
+    
+    if df['value'].isnull.any():
+        raise ValueError("Null values detected in 'value' column.")
+    
+    if (df['value'] < 0).any():
+        raise ValueError("Negative values deteced in 'value' column.")
+    
+    # Drop duplicate values and log any removed
+    before = len(df)
+    df.drop_duplicates(inplace=True)
+    after = len(df)
+    if before != after:
+        print(f"Removed {before - after} duplicate rows.")
+
+    print("Data validation passed successfully.")
+    kwargs['ti'].xcom_push(key='validated_data', value=df.to_json(orient='records'))
+
 def load_to_postgres(**kwargs):
     # Initialize Postgres hook and create engine
     hook = PostgresHook(postgres_conn_id="postgres_api_db")
     engine = hook.get_sqlalchemy_engine()
 
     # Pull comp_df from XCom
-    json_data = kwargs['ti'].xcom_pull(task_ids='fetch_api', key='comp_data')
+    json_data = kwargs['ti'].xcom_pull(task_ids='validate_data', key='validated_data')
     if not json_data:
-        print("No data found in XCom. Skipping insert.")
+        print("No validated data found in XCom. Skipping insert.")
         return
     
     # Load new data to Postgres database
     comp_df = pd.read_json(json_data)
-    print(f"LOADING {len(comp_df)} ROWS TO DATABASE...")
+    print(f"Loading {len(comp_df)} rows to database...")
 
     comp_df.to_sql('component_measurements', engine, if_exists='append', index=False)
     print("Data successfully inserted into Luchtmeetnet database.")
@@ -82,9 +115,20 @@ with DAG(
         python_callable=fetch_api_data,
         doc_md = """
         ### Fetch API Data
-        This task requests data from the Luchtmeetnet API on an hourly basis
+        Requests data from the Luchtmeetnet API on an hourly basis
         and transforms them into a pandas dataframe.
         """,
+    )
+
+    validate_data_task = PythonOperator(
+        task_id="validate_data",
+        python_callable=validate_data,
+        doc_md="""
+        ### Validate Extracted Data
+        Converts data pulled from the API to a Pandas dataframe and
+        checks schema, nulls, ranges, and duplicates before loading
+        to PostgreSQL.
+        """
     )
 
     # Define loading task to insert data into Postgres database
@@ -93,10 +137,10 @@ with DAG(
         python_callable=load_to_postgres,
         doc_md="""
         ### Load to PostgreSQL
-        This task uses a PostgresHook to connect to database and append
+        Utilizes a PostgresHook to connect to database and append
         newly extracted data to the component measurements table.
         """,
     )
 
-    # Define task dependencies
-    fetch_api >> load_postgres   
+    # Task dependencies
+    fetch_api >> validate_data >> load_postgres   
