@@ -55,30 +55,63 @@ def validate_data(**kwargs):
         return None
 
     df = pd.read_json(json_data)
+    hook = PostgresHook(postgres_conn_id="postgres_api_db")
+    engine = hook.get_sqlalchemy_engine()
+    
+
+    # Initialize metrics
+    total_rows = len(df)
+    tz = pytz.timezone('UTC')
+    
+    metrics = {
+        "timestamp": datetime.now(tz=tz).strftime('%Y-%m-%dT%H:%M:%S'),
+        "total_rows": total_rows,
+        "duplicates_removed": 0,
+        "nulls_dropped": 0,
+        "negatives_corrected": 0,
+        "rows_quarantined": 0
+    }
 
     # Validation rules
-    print("Starting data validation...")
+    print(f"Starting data validation and cleaning: {total_rows} rows received")
 
+    # Check required columns
     required_columns = ['station_number', 'value', 'timestamp_measured', 'formula']
     missing_columns = [c for c in required_columns if c not in df.columns]
     if missing_columns:
         raise ValueError(f"Missing required columns: {missing_columns}")
     
-    if df['value'].isnull.any():
-        raise ValueError("Null values detected in 'value' column.")
-    
-    if (df['value'] < 0).any():
-        raise ValueError("Negative values deteced in 'value' column.")
-    
-    # Drop duplicate values and log any removed
+    # Drop duplicates
     before = len(df)
     df.drop_duplicates(inplace=True)
     after = len(df)
     if before != after:
         print(f"Removed {before - after} duplicate rows.")
 
-    print("Data validation passed successfully.")
-    kwargs['ti'].xcom_push(key='validated_data', value=df.to_json(orient='records'))
+    # Handle null values
+    null_rows = df[df['value'].isnull()]
+    if not null_rows.empty:
+        null_rows.to_sql('invalid_measurements', engine, if_exists='append', index=False)
+        metrics['nulls_dropped'] = len(null_rows)
+        metrics['rows_quarantined'] += len(null_rows)
+        df = df.dropna(subset=['value'])
+
+    # Handle negative values
+    neg_rows = df[df['value'] < 0]
+    if not neg_rows.empty:
+        neg_rows.to_sql('invalid_measurements', engine, if_exists='append', index=False)
+        metrics['nulls_dropped'] = len(neg_rows)
+        metrics['rows_quarantined'] += len(neg_rows)
+        df = df[df['value'] >= 0]
+
+    # Log quality metrics
+    metrics_df = pd.DataFrame([metrics])
+    metrics_df.to_sql('data_validation_log', engine, if_exists='append', index=False)
+    print(metrics_df)
+
+    # Push cleaned data
+    kwargs['ti'].xcom_push(key='clean_data', value=df.to_json(orient='records'))
+    print(f"Data validation & cleaning complete. {len(df)} rows ready for loading.")
 
 def load_to_postgres(**kwargs):
     # Initialize Postgres hook and create engine
