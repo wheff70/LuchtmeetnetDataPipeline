@@ -13,7 +13,7 @@ default_args = {
     'retry_exponential_backoff': True,
     'max_retry_delay': timedelta(minutes=15),
     'execution_timeout': timedelta(minutes=10),
-    'depends_on_past': True
+    'depends_on_past': False
 }
 
 def fetch_api_data(**kwargs):
@@ -49,7 +49,7 @@ def fetch_api_data(**kwargs):
     print("Data pushed to XCom.")
 
 def validate_data(**kwargs):
-    json_data = kwargs['ti'].xcom_pull(task='fetch_api', key='comp_data')
+    json_data = kwargs['ti'].xcom_pull(task_ids='fetch_api', key='comp_data')
     if not json_data:
         print("No data found in XCom for validation. Skipping.")
         return None
@@ -119,7 +119,7 @@ def load_to_postgres(**kwargs):
     engine = hook.get_sqlalchemy_engine()
 
     # Pull comp_df from XCom
-    json_data = kwargs['ti'].xcom_pull(task_ids='validate_data', key='validated_data')
+    json_data = kwargs['ti'].xcom_pull(task_ids='validate_data_task', key='clean_data')
     if not json_data:
         print("No validated data found in XCom. Skipping insert.")
         return
@@ -154,7 +154,7 @@ with DAG(
     )
 
     validate_data_task = PythonOperator(
-        task_id="validate_data",
+        task_id="validate_data_task",
         python_callable=validate_data,
         doc_md="""
         ### Validate Extracted Data
@@ -176,4 +176,4 @@ with DAG(
     )
 
     # Task dependencies
-    fetch_api >> validate_data >> load_postgres   
+    fetch_api >> validate_data_task >> load_postgres   
