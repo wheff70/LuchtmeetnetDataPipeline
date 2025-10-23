@@ -1,0 +1,28 @@
+# -------------------------
+# Data Processing
+# -------------------------
+pandas==2.1.0
+numpy==1.26.0
+
+# -------------------------
+# HTTP Requests
+# -------------------------
+requests==2.31.0
+
+# -------------------------
+# PostgreSQL / Database
+# -------------------------
+sqlalchemy==2.0.21
+psycopg2-binary==2.9.9
+
+# -------------------------
+# Airflow
+# -------------------------
+apache-airflow==2.9.2
+apache-airflow-providers-postgres==6.1.0
+apache-airflow-providers-http==8.1.0
+
+# -------------------------
+# Timezones / Dates
+# -------------------------
+pytz==2025.7
