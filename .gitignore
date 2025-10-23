@@ -1,0 +1,33 @@
+# ------------------------------
+# Python
+# ------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+*.egg
+*.egg-info/
+*.manifest
+*.spec
+venv/
+env/
+ENV/
+.env
+.venv/
+.ipynb_checkpoints
+*.ipynb_checkpoints
+*.log
+
+# ------------------------------
+# Docker / Airflow
+# ------------------------------
+*.pid
+logs/
+airflow/logs/
+airflow/tmp/
+airflow/plugins/__pycache__/
+__pycache__/
+tmp/
+.dockerignore
+*.tar
